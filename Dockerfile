@@ -48,7 +48,6 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY pg_pii_vault.control ./
 COPY src ./src/
-COPY sql ./sql/
 
 # Build the extension
 RUN cargo pgrx package --pg-config /usr/local/pgsql/bin/pg_config --features pg18
