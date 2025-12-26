@@ -44,6 +44,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        INCLUDE_DEMO_INIT: "true"
     container_name: postgres_pii_vault
     ports:
       - "5432:5432"

@@ -8,9 +8,8 @@ struct CacheEntry {
     expires_at: Instant,
 }
 
-static KEY_CACHE: Lazy<RwLock<HashMap<Vec<u8>, CacheEntry>>> = Lazy::new(|| {
-    RwLock::new(HashMap::new())
-});
+static KEY_CACHE: Lazy<RwLock<HashMap<Vec<u8>, CacheEntry>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
 
 pub fn get_cached_key(key_id: &[u8]) -> Option<[u8; 32]> {
     let cache = KEY_CACHE.read().ok()?;
@@ -24,9 +23,12 @@ pub fn get_cached_key(key_id: &[u8]) -> Option<[u8; 32]> {
 
 pub fn insert_into_cache(key_id: Vec<u8>, key: [u8; 32], ttl_secs: u64) {
     if let Ok(mut cache) = KEY_CACHE.write() {
-        cache.insert(key_id, CacheEntry {
-            key,
-            expires_at: Instant::now() + Duration::from_secs(ttl_secs),
-        });
+        cache.insert(
+            key_id,
+            CacheEntry {
+                key,
+                expires_at: Instant::now() + Duration::from_secs(ttl_secs),
+            },
+        );
     }
 }
