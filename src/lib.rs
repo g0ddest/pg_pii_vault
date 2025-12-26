@@ -65,14 +65,14 @@ pub struct PiiText {
 #[pg_extern(immutable, strict, name = "piitext_in_text")]
 fn piitext_input(input: &str) -> PiiText {
     PiiText {
-        inner: PiiTextContents::Staging(Cow::Borrowed(input)).to_bytes(),
+        inner: PiiTextContents::Staging(Cow::Borrowed(input)).into(),
     }
 }
 
 // Custom output function - converts PiiText to readable text
 #[pg_extern(immutable, strict, name = "piitext_out_text")]
 fn piitext_output(input: PiiText) -> String {
-    let pii = PiiTextContents::from_bytes(&input.inner);
+    let pii = PiiTextContents::from(input.inner.as_slice());
     match pii {
         PiiTextContents::Staging(s) => s.into_owned(),
         PiiTextContents::Sealed(sealed) => {
@@ -113,7 +113,7 @@ CREATE CAST (piitext AS text) WITH FUNCTION piitext_out_text(piitext) AS IMPLICI
 
 #[pg_extern]
 fn piitext_debug(input: PiiText) -> String {
-    let pii = PiiTextContents::from_bytes(&input.inner);
+    let pii = PiiTextContents::from(input.inner.as_slice());
     format!("{:?}", pii)
 }
 
@@ -153,8 +153,7 @@ fn piitext_encrypt(plaintext: &str, key_id_bytes: Vec<u8>) -> PiiText {
     let context = format!("col:piitext:id:{}", hex::encode(&key_id_bytes));
     match crypto::encrypt(plaintext, &key, &key_id_bytes, &context) {
         Ok(sealed) => {
-            let sealed_bytes = PiiTextContents::Sealed(sealed).to_bytes();
-            PiiText { inner: sealed_bytes }
+            PiiText { inner: PiiTextContents::Sealed(sealed).into() }
         }
         Err(e) => {
             pgrx::error!("Encryption failed: {}", e);
@@ -167,7 +166,7 @@ fn piitext_encrypt(plaintext: &str, key_id_bytes: Vec<u8>) -> PiiText {
 #[pg_extern(immutable, strict, name = "piitext_encrypt_piitext")]
 fn piitext_encrypt_from_piitext(input: PiiText, key_id_bytes: Vec<u8>) -> PiiText {
     // First, extract the plaintext from the input
-    let plaintext = match PiiTextContents::from_bytes(&input.inner) {
+    let plaintext = match PiiTextContents::from(input.inner.as_slice()) {
         PiiTextContents::Staging(s) => s.into_owned(),
         PiiTextContents::Sealed(sealed) => {
             // Decrypt the sealed data first
