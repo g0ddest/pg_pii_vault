@@ -22,7 +22,46 @@ PostgreSQL extension for GDPR-compliant column-level encryption using HashiCorp 
 
 ## Quick Start
 
-### Installation
+### Docker Compose Demo
+
+The fastest way to try `pg_pii_vault` is using Docker Compose:
+
+```bash
+# Start all services (PostgreSQL + Vault)
+docker-compose up -d
+
+# Wait for services to be ready
+docker-compose ps
+
+# Connect to PostgreSQL
+psql -h localhost -U postgres -d testdb
+```
+
+The demo environment includes:
+- PostgreSQL 18 with `pg_pii_vault` extension pre-installed
+- HashiCorp Vault in dev mode with Transit engine enabled
+- Pre-configured connection settings
+- Sample database initialization
+
+### Production Installation
+
+#### Option 1: Docker Image
+
+```bash
+# Pull the production image (without demo init script)
+docker pull ghcr.io/g0ddest/pg_pii_vault:latest
+
+# Run with your Vault configuration
+docker run -d \
+  -e POSTGRES_PASSWORD=yourpassword \
+  -e PII_VAULT_URL=http://vault:8200 \
+  -e PII_VAULT_TOKEN=your-vault-token \
+  -e PII_VAULT_MOUNT=transit \
+  -p 5432:5432 \
+  ghcr.io/g0ddest/pg_pii_vault:latest
+```
+
+#### Option 2: Build from Source
 
 ```bash
 # Prerequisites: Rust, pgrx
@@ -132,6 +171,32 @@ SELECT piitext_out_text(secret) FROM users WHERE id = 456;
 - **IV**: 12 bytes, generated via `pg_strong_random()`
 - **AAD**: `col:piitext:id:<hex_key_id>` for protection against attacks
 
+## Distribution
+
+### Docker Images
+
+Docker images are automatically built for multiple architectures on each release:
+
+- **Production Image**: `ghcr.io/g0ddest/pg_pii_vault:latest`
+  - PostgreSQL 18 with `pg_pii_vault` extension
+  - No demo initialization scripts
+  - Multi-arch: `linux/amd64`, `linux/arm64`
+
+- **Demo Image**: `ghcr.io/g0ddest/pg_pii_vault:demo`
+  - Includes sample database setup
+  - For testing and demonstration purposes only
+  - Multi-arch: `linux/amd64`, `linux/arm64`
+
+### Building Custom Images
+
+```bash
+# Build production image
+docker build --build-arg INCLUDE_DEMO_INIT=false -t pg_pii_vault:prod .
+
+# Build demo image
+docker build --build-arg INCLUDE_DEMO_INIT=true -t pg_pii_vault:demo .
+```
+
 ## Testing
 
 ```bash
@@ -139,10 +204,12 @@ SELECT piitext_out_text(secret) FROM users WHERE id = 456;
 cargo pgrx test pg16
 
 # Expected output:
-# test tests::pg_test_piitext_basic ... ok
-# test tests::pg_test_encryption_with_uuid ... ok
-# test tests::pg_test_encryption_with_int ... ok
-# test tests::pg_test_debug_output ... ok
+# test tests::test_piitext_basic ... ok
+# test tests::test_encryption_with_uuid ... ok
+# test tests::test_encryption_with_int ... ok
+# test tests::test_debug_output ... ok
+# test tests::test_crypto_shredding_workflow ... ok
+# test tests::test_re_encryption_with_different_key ... ok
 ```
 
 ## Configuration
@@ -182,6 +249,14 @@ For GDPR "right to be forgotten":
 1. No automatic encryption via `piitext(id_column)` syntax - use `piitext_encrypt()` explicitly
 2. SELECT without `piitext_out_text()` returns CBOR JSON
 3. Triggers not implemented due to pgrx limitations
+
+## CI/CD
+
+The project uses GitHub Actions for continuous integration and delivery:
+
+- **PR Validation**: Runs tests, formatting checks, and clippy on every pull request
+- **Release Pipeline**: Builds multi-architecture Docker images on release creation
+- **Automated Testing**: All tests run using mock Vault for faster execution
 
 ## Roadmap
 

@@ -56,6 +56,9 @@ RUN cargo pgrx package --pg-config /usr/local/pgsql/bin/pg_config --features pg1
 # Runtime stage
 FROM postgres:18.1
 
+# Build argument to include demo init script
+ARG INCLUDE_DEMO_INIT=false
+
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libssl3 \
@@ -66,8 +69,14 @@ RUN apt-get update && apt-get install -y \
 COPY --from=builder /build/target/release/pg_pii_vault-pg18/usr/local/pgsql/share/extension/* /usr/share/postgresql/18/extension/
 COPY --from=builder /build/target/release/pg_pii_vault-pg18/usr/local/pgsql/lib/* /usr/lib/postgresql/18/lib/
 
-# Copy initialization script
-COPY docker-init.sql /docker-entrypoint-initdb.d/
+# Conditionally copy initialization script for demo purposes only
+RUN if [ "$INCLUDE_DEMO_INIT" = "true" ]; then mkdir -p /docker-entrypoint-initdb.d/; fi
+COPY --chmod=0755 docker-init.sql /tmp/docker-init.sql
+RUN if [ "$INCLUDE_DEMO_INIT" = "true" ]; then \
+        mv /tmp/docker-init.sql /docker-entrypoint-initdb.d/; \
+    else \
+        rm /tmp/docker-init.sql; \
+    fi
 
 # Environment variables for Vault connection
 ENV PII_VAULT_URL=""

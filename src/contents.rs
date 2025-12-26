@@ -36,7 +36,9 @@ impl<'a> From<PiiTextContents<'a>> for Vec<u8> {
     fn from(contents: PiiTextContents<'a>) -> Vec<u8> {
         match contents {
             PiiTextContents::Staging(s) => s.as_bytes().to_vec(),
-            PiiTextContents::Sealed(data) => serde_cbor::to_vec(&data).expect("CBOR serialization failed"),
+            PiiTextContents::Sealed(data) => {
+                serde_cbor::to_vec(&data).expect("CBOR serialization failed")
+            }
         }
     }
 }
@@ -45,7 +47,9 @@ impl<'a> From<&PiiTextContents<'a>> for Vec<u8> {
     fn from(contents: &PiiTextContents<'a>) -> Vec<u8> {
         match contents {
             PiiTextContents::Staging(s) => s.as_bytes().to_vec(),
-            PiiTextContents::Sealed(data) => serde_cbor::to_vec(data).expect("CBOR serialization failed"),
+            PiiTextContents::Sealed(data) => {
+                serde_cbor::to_vec(data).expect("CBOR serialization failed")
+            }
         }
     }
 }

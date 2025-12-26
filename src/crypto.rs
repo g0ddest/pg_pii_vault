@@ -17,7 +17,7 @@ pub fn encrypt(
             return Err("Failed to generate random IV".to_string());
         }
     }
-    
+
     let nonce = Nonce::from_slice(&iv_bytes);
     let payload = Payload {
         msg: plaintext.as_bytes(),
@@ -43,14 +43,10 @@ pub fn encrypt(
     })
 }
 
-pub fn decrypt(
-    data: &PiiSealedData,
-    key: &[u8; 32],
-    context: &str,
-) -> Result<String, String> {
+pub fn decrypt(data: &PiiSealedData, key: &[u8; 32], context: &str) -> Result<String, String> {
     let cipher = Aes256Gcm::new(key.into());
     let nonce = Nonce::from_slice(&data.iv);
-    
+
     let mut ciphertext_with_tag = data.ciphertext.clone();
     ciphertext_with_tag.extend_from_slice(&data.tag);
 
