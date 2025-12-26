@@ -182,18 +182,13 @@ Docker images are automatically built for multiple architectures on each release
   - No demo initialization scripts
   - Multi-arch: `linux/amd64`, `linux/arm64`
 
-- **Demo Image**: `ghcr.io/g0ddest/pg_pii_vault:demo`
-  - Includes sample database setup
-  - For testing and demonstration purposes only
-  - Multi-arch: `linux/amd64`, `linux/arm64`
-
 ### Building Custom Images
 
 ```bash
 # Build production image
 docker build --build-arg INCLUDE_DEMO_INIT=false -t pg_pii_vault:prod .
 
-# Build demo image
+# Build demo image with demo data
 docker build --build-arg INCLUDE_DEMO_INIT=true -t pg_pii_vault:demo .
 ```
 
