@@ -45,7 +45,7 @@ RUN cargo pgrx init --pg18=/usr/local/pgsql/bin/pg_config
 
 # Copy extension source
 WORKDIR /build
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 COPY pg_pii_vault.control ./
 COPY src ./src/
 
