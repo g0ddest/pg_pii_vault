@@ -1,5 +1,7 @@
 # pg_pii_vault
 
+[![PR Validation](https://github.com/g0ddest/pg_pii_vault/actions/workflows/pr-validation.yml/badge.svg)](https://github.com/g0ddest/pg_pii_vault/actions/workflows/pr-validation.yml)
+
 PostgreSQL extension for GDPR-compliant column-level encryption using HashiCorp Vault Transit Engine.
 
 ## Notice
