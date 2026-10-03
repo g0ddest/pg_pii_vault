@@ -2,71 +2,158 @@ name: PR Validation
 
 on:
   pull_request:
-    branches: [main, master]
   push:
-    branches: [main, master]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_PGRX_VERSION: "0.16.1"
+  RUST_TOOLCHAIN: "1.98.1"
 
 jobs:
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-
+  lint:
+    name: Format and clippy
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v4
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libclang-dev \
-            build-essential \
-            libreadline-dev \
-            zlib1g-dev \
-            flex \
-            bison \
-            libxml2-dev \
-            libxslt-dev \
-            libssl-dev \
-            libxml2-utils \
-            xsltproc \
-            pkg-config
-
-      - name: Install pgrx
-        run: cargo install --locked cargo-pgrx
-
-      - name: Initialize pgrx (download PostgreSQL binaries)
-        run: cargo pgrx init --pg18 download
-
-      - name: Run tests with mock Vault
-        run: cargo pgrx test pg18
-
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
       - name: Check formatting
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
+      - name: Install PostgreSQL 18
+        run: scripts/ci/install-postgres.sh 18
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: lint
+      - name: Install cargo-pgrx
+        run: cargo install cargo-pgrx --version "$CARGO_PGRX_VERSION" --locked
+      - name: Initialise pgrx
+        run: cargo pgrx init --pg18="$PG_CONFIG"
+      - name: Clippy (extension and tests)
+        run: cargo clippy --locked --no-default-features --features "pg18 pg_test" --all-targets -- -D warnings
 
-      - name: Run clippy
-        run: cargo clippy --no-default-features --features pg18 -- -D warnings
+  test:
+    name: Tests (PostgreSQL ${{ matrix.pg }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [14, 15, 16, 17, 18]
+    services:
+      vault:
+        image: hashicorp/vault:2.1.1
+        env:
+          VAULT_DEV_ROOT_TOKEN_ID: root
+          VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+        ports:
+          - 8200:8200
+        options: >-
+          --cap-add=IPC_LOCK
+          --health-cmd "vault status -address=http://127.0.0.1:8200"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Install PostgreSQL ${{ matrix.pg }}
+        run: scripts/ci/install-postgres.sh ${{ matrix.pg }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: pg${{ matrix.pg }}
+      - name: Install cargo-pgrx
+        run: cargo install cargo-pgrx --version "$CARGO_PGRX_VERSION" --locked
+      - name: Initialise pgrx
+        run: cargo pgrx init --pg${{ matrix.pg }}="$PG_CONFIG"
+      - name: Prepare Vault (Transit, policies, least-privilege tokens)
+        run: scripts/ci/setup-vault.sh
+      - name: Run tests (including real Vault tests)
+        run: cargo pgrx test pg${{ matrix.pg }}
+
+  upgrade:
+    name: Upgrade from 0.0.0
+    runs-on: ubuntu-24.04
+    services:
+      vault:
+        image: hashicorp/vault:2.1.1
+        env:
+          VAULT_DEV_ROOT_TOKEN_ID: root
+          VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+        ports:
+          - 8200:8200
+        options: >-
+          --cap-add=IPC_LOCK
+          --health-cmd "vault status -address=http://127.0.0.1:8200"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Install PostgreSQL 18
+        run: scripts/ci/install-postgres.sh 18
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: upgrade
+      - name: Install cargo-pgrx
+        run: cargo install cargo-pgrx --version "$CARGO_PGRX_VERSION" --locked
+      - name: Initialise pgrx
+        run: cargo pgrx init --pg18="$PG_CONFIG"
+      - name: Prepare Vault
+        run: scripts/ci/setup-vault.sh
+      - name: Upgrade test
+        run: scripts/ci/upgrade-test.sh 18
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check advisories bans licenses sources
+
+  docker:
+    name: Docker image smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: pg_pii_vault:demo
+          build-args: INCLUDE_DEMO_INIT=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test with the demo stack
+        env:
+          SKIP_BUILD: "1"
+        run: scripts/ci/docker-smoke.sh
+      - name: Compose logs
+        if: failure()
+        run: cat "$RUNNER_TEMP/pg-pii-vault-compose.log" || true

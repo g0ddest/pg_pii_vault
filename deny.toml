@@ -1,0 +1,31 @@
+# cargo-deny configuration: https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2021-0127", reason = "serde_cbor is unmaintained but has no known vulnerability; pgrx depends on it, and pg_pii_vault uses it only to encode and decode its own sealed-value format" },
+    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained but has no known vulnerability; it is a compile-time proc-macro used only by the pgrx-tests dev-dependency, not by the shipped library" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
