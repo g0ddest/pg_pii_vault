@@ -82,6 +82,10 @@ jobs:
       - name: Prepare Vault (Transit, policies, least-privilege tokens)
         run: scripts/ci/setup-vault.sh
       - name: Run tests (including real Vault tests)
+        env:
+          # A fresh test cluster outside target/: rust-cache restores target/,
+          # and a cluster directory restored from it cannot be started.
+          CARGO_PGRX_TEST_PGDATA: ${{ runner.temp }}/pgrx-test-pgdata
         run: cargo pgrx test pg${{ matrix.pg }}
 
   upgrade:
