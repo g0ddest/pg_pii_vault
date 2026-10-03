@@ -28,7 +28,7 @@ pg_test = []
 
 [dependencies]
 pgrx = "=0.16.1"
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 base64 = "0.22"
 hex = "0.4"
 libc = "0.2"
