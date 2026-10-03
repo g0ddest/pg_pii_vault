@@ -25,7 +25,7 @@ then please let the maintainers know ASAP and we will fix it as a critical prior
 
 Security fixes are released for the latest version only. Version 0.0.x is not supported: it stores
 plaintext silently in several situations and exposes the Vault token to every database role. Upgrade to
-0.1.0 as described in [UPGRADING.md](UPGRADING.md).
+the latest 0.1 release as described in [UPGRADING.md](UPGRADING.md).
 
 ## Security model
 

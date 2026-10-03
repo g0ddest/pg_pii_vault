@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 #
-# Upgrade test: install the previous release, write data with it, install the
+# Upgrade test: install a previous release, write data with it, install the
 # current tree, run ALTER EXTENSION ... UPDATE and check that
 #   * the old values still decrypt,
-#   * the objects that persist decrypted values, or can no longer be
-#     restored from a dump, are reported,
+#   * when upgrading from 0.0.x, the objects that persist decrypted values,
+#     or can no longer be restored from a dump, are reported,
 #   * the catalog equals a fresh installation of the new version.
 #
 # usage: scripts/ci/upgrade-test.sh <pg-major>
 # env:   PG_CONFIG           pg_config of the server (default: PGDG path for <pg-major>)
-#        PREV_REF            git revision of the previous release (default: 0.0.0 = 3425662)
+#        PREV_REF            git revision of the previous release (default: 0.0.0 = 3425662;
+#                            for example v0.1.0)
 #        NEW_VERSION         version installed by the current tree (default: from Cargo.toml)
 #        UPGRADE_WORK_DIR    scratch directory; keep it short (unix socket path limit)
 #        UPGRADE_PORT        port of the temporary cluster (default 5499)
@@ -46,6 +47,8 @@ fail() {
 
 echo "--- installing the previous release (${prev_ref})"
 git -C "${root_dir}" worktree add --detach "${work}/prev" "${prev_ref}" >/dev/null
+prev_version="$(sed -n 's/^version = "\(.*\)"/\1/p' "${work}/prev/Cargo.toml" | head -1)"
+echo "previous version: ${prev_version}"
 (cd "${work}/prev" && cargo pgrx install --pg-config "${pg_config}" --no-default-features --features "pg${major}")
 
 echo "--- starting a temporary cluster"
@@ -68,7 +71,15 @@ CREATE TABLE people (id int PRIMARY KEY, email piitext, note piitext);
 INSERT INTO people VALUES
     (1, piitext_encrypt('alice@example.com', int4send(1)), piitext_in_text('staged note')),
     (2, piitext_encrypt('Žluťoučký kůň', int4send(2)), NULL);
--- Objects that persist decrypted values; 0.0.0 allowed them.
+SQL
+
+legacy=false
+if [[ "${prev_version}" == 0.0.* ]]; then
+	legacy=true
+	psql -d upg <<SQL
+SET pii_vault.url = '${vault_url}';
+SET pii_vault.token = '${vault_token}';
+-- Objects that persist decrypted values; 0.0.x allowed them.
 CREATE INDEX people_email_plain ON people ((email::text));
 CREATE STATISTICS people_email_stats ON (email::text) FROM people;
 ALTER TABLE people ADD COLUMN email_plain text GENERATED ALWAYS AS (email::text) STORED;
@@ -77,6 +88,7 @@ ALTER TABLE people ADD COLUMN email_plain text GENERATED ALWAYS AS (email::text)
 CREATE TABLE generated_enc (id int, plain text,
     enc piitext GENERATED ALWAYS AS (piitext_encrypt(plain, int4send(id))) STORED);
 SQL
+fi
 
 echo "--- installing the current tree (${new_version})"
 (cd "${root_dir}" && cargo pgrx install --pg-config "${pg_config}" --no-default-features --features "pg${major}")
@@ -84,17 +96,21 @@ echo "--- installing the current tree (${new_version})"
 
 update_log=$(psql -d upg -c "ALTER EXTENSION pg_pii_vault UPDATE TO '${new_version}'" 2>&1)
 echo "${update_log}"
-# A generated column appears as "default value for column ..." on
-# PostgreSQL 16 and later and as "column ..." before.
-for object in "index people_email_plain" "statistics object people_email_stats" \
-	"column email_plain of table people"; do
-	grep -q "${object} stores or indexes decrypted plaintext" <<<"${update_log}" ||
-		fail "${object} was not reported"
-done
-grep -q "column enc of table generated_enc uses piitext_encrypt(text,bytea), which is no longer IMMUTABLE" <<<"${update_log}" ||
-	fail "the generated column on piitext_encrypt was not reported"
-psql -d upg -c "DROP INDEX people_email_plain" -c "DROP STATISTICS people_email_stats" \
-	-c "ALTER TABLE people DROP COLUMN email_plain" -c "DROP TABLE generated_enc"
+if [[ "${legacy}" == true ]]; then
+	# A generated column appears as "default value for column ..." on
+	# PostgreSQL 16 and later and as "column ..." before.
+	for object in "index people_email_plain" "statistics object people_email_stats" \
+		"column email_plain of table people"; do
+		grep -q "${object} stores or indexes decrypted plaintext" <<<"${update_log}" ||
+			fail "${object} was not reported"
+	done
+	grep -q "column enc of table generated_enc uses piitext_encrypt(text,bytea), which is no longer IMMUTABLE" <<<"${update_log}" ||
+		fail "the generated column on piitext_encrypt was not reported"
+	psql -d upg -c "DROP INDEX people_email_plain" -c "DROP STATISTICS people_email_stats" \
+		-c "ALTER TABLE people DROP COLUMN email_plain" -c "DROP TABLE generated_enc"
+fi
+[[ "$(psql -d upg -At -c "SELECT extversion FROM pg_extension WHERE extname = 'pg_pii_vault'")" == "${new_version}" ]] ||
+	fail "the extension was not updated to ${new_version}"
 
 session="SET pii_vault.url = '${vault_url}'; SET pii_vault.token = '${vault_token}';"
 
@@ -138,4 +154,4 @@ psql -d upg -At -c "${catalog_query}" > "${work}/catalog-upgraded.txt"
 psql -d fresh -At -c "${catalog_query}" > "${work}/catalog-fresh.txt"
 diff -u "${work}/catalog-fresh.txt" "${work}/catalog-upgraded.txt" || fail "catalog differs from a fresh installation"
 
-echo "upgrade test passed ($(wc -l < "${work}/catalog-fresh.txt" | tr -d ' ') catalog objects compared)"
+echo "upgrade test from ${prev_version} passed ($(wc -l < "${work}/catalog-fresh.txt" | tr -d ' ') catalog objects compared)"

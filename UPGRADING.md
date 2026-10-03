@@ -1,4 +1,25 @@
-# Upgrading pg_pii_vault from 0.0.0 to 0.1.0
+# Upgrading pg_pii_vault
+
+## From 0.1.0 to 0.1.1
+
+0.1.1 updates dependencies and changes neither the SQL interface nor the stored values.
+
+1. Install the new files (see [step 2](#2-install-the-new-files) below) on the primary, every physical
+   standby and every logical replication subscriber.
+2. Restart the server: the library is preloaded, so running backends keep the old one until then.
+3. In every database that has the extension, as a superuser:
+
+   ```sql
+   ALTER EXTENSION pg_pii_vault UPDATE;
+   SELECT extversion FROM pg_extension WHERE extname = 'pg_pii_vault';   -- 0.1.1
+   ```
+
+Nothing else changes.
+
+## From 0.0.0 to 0.1
+
+The rest of this guide covers the upgrade from 0.0.0. Installing 0.1.1 and running
+`ALTER EXTENSION pg_pii_vault UPDATE` takes a 0.0.0 database straight to 0.1.1, through 0.1.0.
 
 0.1.0 is a security release and changes behaviour that applications rely on. Read the whole procedure before you start, and rehearse it on a copy of the production databases. [CHANGELOG.md](CHANGELOG.md) lists every change. [USAGE.md](USAGE.md) describes how to use 0.1.0.
 
@@ -90,14 +111,14 @@ The following changes work with both 0.0.0 and 0.1.0, so you can deploy them bef
   Keys created by 0.0.0 are exportable `aes256-gcm96` keys and work with the default `pii_vault.key_mode = 'export'`. Keep export mode for the upgrade.
 - Deliver the token as a file that only the PostgreSQL operating system user can read. Use a periodic token renewed by Vault Agent with a file sink, or a Kubernetes or Docker secret. The file is read on every Vault request, so rotating the token needs no reload.
 
-## 2. Install the 0.1.0 files
+## 2. Install the new files
 
 Install the new files on the primary, on every physical standby, and on logical replication subscribers that have the extension:
 
 - the shared library (`pg_pii_vault.so`, or `pg_pii_vault.dylib` on macOS)
 - `pg_pii_vault.control`
-- `pg_pii_vault--0.1.0.sql`
-- `pg_pii_vault--0.0.0--0.1.0.sql`
+- `pg_pii_vault--0.1.1.sql` (a fresh installation)
+- `pg_pii_vault--0.0.0--0.1.0.sql` and `pg_pii_vault--0.1.0--0.1.1.sql` (the update path)
 
 To build from source, follow [README.md](README.md). It requires cargo-pgrx 0.16.1. For container images, see [DOCKER.md](DOCKER.md).
 
@@ -107,7 +128,7 @@ Check that the new version is available:
 SELECT name, default_version, installed_version
 FROM pg_available_extensions
 WHERE name = 'pg_pii_vault';
--- default_version 0.1.0, installed_version 0.0.0 (until step 4)
+-- default_version 0.1.1, installed_version 0.0.0 (until step 4)
 ```
 
 ## 3. Configure the server and restart
@@ -154,18 +175,18 @@ Remove each token, for example `ALTER DATABASE app RESET pii_vault.token;` or `A
 SHOW shared_preload_libraries;       -- contains pg_pii_vault
 ```
 
-Until step 4 runs, each database uses the 0.1.0 library with the 0.0.0 catalog. That catalog still has the implicit casts, `EXECUTE` for `PUBLIC` and no binary I/O. Run step 4 immediately after the restart.
+Until step 4 runs, each database uses the new library with the 0.0.0 catalog. That catalog still has the implicit casts, `EXECUTE` for `PUBLIC` and no binary I/O. Run step 4 immediately after the restart.
 
 ## 4. Update the extension
 
 In every database that has the extension, as a superuser:
 
 ```sql
-ALTER EXTENSION pg_pii_vault UPDATE TO '0.1.0';
-SELECT extversion FROM pg_extension WHERE extname = 'pg_pii_vault';   -- 0.1.0
+ALTER EXTENSION pg_pii_vault UPDATE;      -- 0.0.0 -> 0.1.0 -> 0.1.1
+SELECT extversion FROM pg_extension WHERE extname = 'pg_pii_vault';   -- 0.1.1
 ```
 
-The update changes only the catalog. It does not read or rewrite stored values, so it completes quickly. Afterwards the catalog is the same as that of a fresh 0.1.0 installation. Values written by 0.0.0 stay readable, and 0.1.0 also accepts the old `{"inner":[...]}` text form in dumps.
+The update changes only the catalog. It does not read or rewrite stored values, so it completes quickly. Afterwards the catalog is the same as that of a fresh installation. Values written by 0.0.0 stay readable, and 0.1.0 also accepts the old `{"inner":[...]}` text form in dumps.
 
 ## 5. Drop the objects reported by the WARNINGs
 
@@ -297,7 +318,7 @@ END $$;
 
 ```sql
 -- Extension version and preloading.
-SELECT extversion FROM pg_extension WHERE extname = 'pg_pii_vault';   -- 0.1.0
+SELECT extversion FROM pg_extension WHERE extname = 'pg_pii_vault';   -- 0.1.1
 SHOW shared_preload_libraries;                                        -- contains pg_pii_vault
 
 -- Configuration, Vault connection, token and policy. Every row with required = true must

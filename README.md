@@ -12,7 +12,7 @@ A role that can only `SELECT` the table sees ciphertext.
 
 ## Status
 
-Version 0.1.0. Before using it in production, make sure that:
+Version 0.1.1. Before using it in production, make sure that:
 
 - `pg_pii_vault` is listed in `shared_preload_libraries`. Preloading is required for cluster-wide cache
   invalidation after shredding and for cluster-wide statistics. Without it, a `pii_vault.token` set in
@@ -62,7 +62,7 @@ Version 0.1.0. Before using it in production, make sure that:
 - **Monitoring.** `piitext_stats()` reports cache and Vault counters per backend and per cluster.
   `piitext_vault_check()` checks the configuration, connectivity, token and Vault policy, and marks which
   checks are required, so it can serve as a readiness probe.
-- **Upgrade path.** You can upgrade from 0.0.0 with `ALTER EXTENSION pg_pii_vault UPDATE TO '0.1.0'`.
+- **Upgrade path.** You can upgrade from 0.0.0 or 0.1.0 with `ALTER EXTENSION pg_pii_vault UPDATE`.
   Values written by 0.0.x are read without migration. See [UPGRADING.md](UPGRADING.md).
 
 ## Quick start

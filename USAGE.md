@@ -1,6 +1,6 @@
 # pg_pii_vault developer guide
 
-This guide covers pg_pii_vault 0.1.0 and is written for developers who write SQL and application code against `piitext` columns. Installing the extension, configuring the server and setting up Vault are operator tasks. For installation, see [README.md](README.md). For container images, see [DOCKER.md](DOCKER.md). To upgrade from 0.0.0, see [UPGRADING.md](UPGRADING.md).
+This guide covers pg_pii_vault 0.1 and is written for developers who write SQL and application code against `piitext` columns. Installing the extension, configuring the server and setting up Vault are operator tasks. For installation, see [README.md](README.md). For container images, see [DOCKER.md](DOCKER.md). To upgrade from 0.0.0, see [UPGRADING.md](UPGRADING.md).
 
 1. [How it works](#1-how-it-works)
 2. [Before you start](#2-before-you-start)
@@ -36,7 +36,7 @@ This guide covers pg_pii_vault 0.1.0 and is written for developers who write SQL
 - Your database administrator installs the extension. Only superusers can change the `pii_vault.*` settings, so you cannot `SET` them from application code. You can read them:
 
   ```sql
-  SELECT extversion FROM pg_extension WHERE extname = 'pg_pii_vault';   -- 0.1.0
+  SELECT extversion FROM pg_extension WHERE extname = 'pg_pii_vault';   -- 0.1.1
   SELECT name, setting FROM pg_settings WHERE name LIKE 'pii\_vault.%' ORDER BY name;
   ```
 

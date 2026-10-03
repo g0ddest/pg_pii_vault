@@ -85,8 +85,16 @@ jobs:
         run: cargo pgrx test pg${{ matrix.pg }}
 
   upgrade:
-    name: Upgrade from 0.0.0
+    name: Upgrade from ${{ matrix.from.version }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        from:
+          - version: "0.0.0"
+            ref: "3425662"
+          - version: "0.1.0"
+            ref: "v0.1.0"
     services:
       vault:
         image: hashicorp/vault:2.1.1
@@ -111,7 +119,7 @@ jobs:
         run: scripts/ci/install-postgres.sh 18
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: upgrade
+          key: upgrade-${{ matrix.from.version }}
       - name: Install cargo-pgrx
         run: cargo install cargo-pgrx --version "$CARGO_PGRX_VERSION" --locked
       - name: Initialise pgrx
@@ -119,6 +127,8 @@ jobs:
       - name: Prepare Vault
         run: scripts/ci/setup-vault.sh
       - name: Upgrade test
+        env:
+          PREV_REF: ${{ matrix.from.ref }}
         run: scripts/ci/upgrade-test.sh 18
 
   audit:
