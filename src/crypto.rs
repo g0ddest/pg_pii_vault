@@ -1,63 +1,93 @@
-use crate::contents::PiiSealedData;
+use crate::contents::{PiiSealedData, FORMAT_V1, FORMAT_V2, IV_LEN, TAG_LEN};
+use crate::error::PiiError;
 use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Nonce,
 };
+use zeroize::Zeroizing;
 
-pub fn encrypt(
-    plaintext: &str,
-    key: &[u8; 32],
-    key_id: &[u8],
-    context: &str,
-) -> Result<PiiSealedData, String> {
-    let cipher = Aes256Gcm::new(key.into());
-    let mut iv_bytes = [0u8; 12];
-    unsafe {
-        if !pgrx::pg_sys::pg_strong_random(iv_bytes.as_mut_ptr() as *mut std::ffi::c_void, 12) {
-            return Err("Failed to generate random IV".to_string());
-        }
+/// Additional authenticated data. It binds the header fields to the
+/// ciphertext; it does not bind a value to a particular row (a sealed value
+/// copied to another row still decrypts there).
+fn aad(format: u8, key_id: &[u8], key_version: u32) -> String {
+    match format {
+        FORMAT_V1 => format!("col:piitext:id:{}", hex::encode(key_id)),
+        _ => format!(
+            "pg_pii_vault:v{format}:{}:{key_version}",
+            hex::encode(key_id)
+        ),
     }
+}
 
-    let nonce = Nonce::from_slice(&iv_bytes);
-    let payload = Payload {
-        msg: plaintext.as_bytes(),
-        aad: context.as_bytes(),
-    };
+/// AAD sent to Vault for format 3 values. It separates this extension's
+/// ciphertexts from those of other applications using the same Transit keys,
+/// so the database cannot be used to decrypt them.
+pub fn transit_aad(key_id: &[u8]) -> String {
+    format!("pg_pii_vault:v3:{}", hex::encode(key_id))
+}
 
-    let ciphertext_with_tag = cipher
-        .encrypt(nonce, payload)
-        .map_err(|e| format!("Encryption failed: {}", e))?;
+fn random_iv() -> Result<[u8; IV_LEN], PiiError> {
+    let mut iv = [0u8; IV_LEN];
+    // SAFETY: the buffer is valid for IV_LEN bytes; pg_strong_random is
+    // PostgreSQL's CSPRNG and is called on the backend thread.
+    let ok = unsafe { pgrx::pg_sys::pg_strong_random(iv.as_mut_ptr().cast(), IV_LEN) };
+    if ok {
+        Ok(iv)
+    } else {
+        Err(PiiError::Unavailable(
+            "pg_strong_random() failed to produce an IV".into(),
+        ))
+    }
+}
 
-    // aes-gcm crate appends tag at the end by default if using encrypt
-    // but we might want to separate it as per spec
-    let tag_pos = ciphertext_with_tag.len() - 16;
-    let ciphertext = ciphertext_with_tag[..tag_pos].to_vec();
-    let tag = ciphertext_with_tag[tag_pos..].to_vec();
-
+/// Encrypt `plaintext` with a fresh random 96-bit IV (format 2).
+pub fn seal(
+    plaintext: &[u8],
+    key_id: &[u8],
+    key_version: u32,
+    key: &[u8; 32],
+) -> Result<PiiSealedData, PiiError> {
+    let iv = random_iv()?;
+    let aad = aad(FORMAT_V2, key_id, key_version);
+    let mut ciphertext = Aes256Gcm::new(key.into())
+        .encrypt(
+            Nonce::from_slice(&iv),
+            Payload {
+                msg: plaintext,
+                aad: aad.as_bytes(),
+            },
+        )
+        .map_err(|_| PiiError::InvalidArgument("value is too large to encrypt".into()))?;
+    let tag = ciphertext.split_off(ciphertext.len() - TAG_LEN);
     Ok(PiiSealedData {
-        version: 1,
+        version: FORMAT_V2,
         key_id: key_id.to_vec(),
-        iv: iv_bytes.to_vec(),
+        key_version: Some(key_version),
+        iv: iv.to_vec(),
         tag,
         ciphertext,
     })
 }
 
-pub fn decrypt(data: &PiiSealedData, key: &[u8; 32], context: &str) -> Result<String, String> {
-    let cipher = Aes256Gcm::new(key.into());
-    let nonce = Nonce::from_slice(&data.iv);
-
-    let mut ciphertext_with_tag = data.ciphertext.clone();
-    ciphertext_with_tag.extend_from_slice(&data.tag);
-
-    let payload = Payload {
-        msg: &ciphertext_with_tag,
-        aad: context.as_bytes(),
-    };
-
-    let plaintext_bytes = cipher
-        .decrypt(nonce, payload)
-        .map_err(|e| format!("Decryption failed: {}", e))?;
-
-    String::from_utf8(plaintext_bytes).map_err(|e| format!("Invalid UTF-8: {}", e))
+/// Try to decrypt with one candidate key; `None` when authentication fails
+/// (wrong key, wrong key version, or tampered data).
+pub fn open(
+    sealed: &PiiSealedData,
+    key_version: u32,
+    key: &[u8; 32],
+) -> Option<Zeroizing<Vec<u8>>> {
+    let aad = aad(sealed.version, &sealed.key_id, key_version);
+    let mut buf = Vec::with_capacity(sealed.ciphertext.len() + TAG_LEN);
+    buf.extend_from_slice(&sealed.ciphertext);
+    buf.extend_from_slice(&sealed.tag);
+    Aes256Gcm::new(key.into())
+        .decrypt(
+            Nonce::from_slice(&sealed.iv),
+            Payload {
+                msg: &buf,
+                aad: aad.as_bytes(),
+            },
+        )
+        .ok()
+        .map(Zeroizing::new)
 }

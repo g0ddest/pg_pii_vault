@@ -1,7 +1,14 @@
 [package]
 name = "pg_pii_vault"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
+description = "PostgreSQL extension for column-level PII encryption with per-record keys held in HashiCorp Vault (crypto-shredding)"
+license = "MIT"
+repository = "https://github.com/g0ddest/pg_pii_vault"
+readme = "README.md"
+keywords = ["postgresql", "encryption", "vault", "gdpr", "pgrx"]
+categories = ["database", "cryptography"]
+publish = false
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -11,25 +18,34 @@ name = "pgrx_embed_pg_pii_vault"
 path = "./src/bin/pgrx_embed.rs"
 
 [features]
-default = ["pg13"]
-pg13 = ["pgrx/pg13", "pgrx-tests/pg13" ]
-pg14 = ["pgrx/pg14", "pgrx-tests/pg14" ]
-pg15 = ["pgrx/pg15", "pgrx-tests/pg15" ]
-pg16 = ["pgrx/pg16", "pgrx-tests/pg16" ]
-pg17 = ["pgrx/pg17", "pgrx-tests/pg17" ]
-pg18 = ["pgrx/pg18", "pgrx-tests/pg18" ]
+default = ["pg18"]
+pg14 = ["pgrx/pg14", "pgrx-tests/pg14"]
+pg15 = ["pgrx/pg15", "pgrx-tests/pg15"]
+pg16 = ["pgrx/pg16", "pgrx-tests/pg16"]
+pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
+pg18 = ["pgrx/pg18", "pgrx-tests/pg18"]
 pg_test = []
 
 [dependencies]
 pgrx = "=0.16.1"
-serde = { version = "1.0", features = ["derive"] }
-serde_cbor = "0.11"
 aes-gcm = "0.10"
-reqwest = { version = "0.12.28", features = ["blocking", "json"] }
-serde_json = "1.0"
-once_cell = "1.19"
-base64 = "0.22.1"
+base64 = "0.22"
 hex = "0.4"
+libc = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11"
+serde_cbor = "0.11"
+serde_json = "1.0"
+# Synchronous HTTP client without an async runtime: as configured in
+# src/http.rs it starts no threads of its own; rustls TLS (no OpenSSL linked
+# into the backend).
+ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
+zeroize = "1"
+
+[lints.rust]
+# pgrx macros (pg_shmem_init!) test for the pg13 feature, which this crate no
+# longer offers (PostgreSQL 13 is end-of-life).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("pg13"))'] }
 
 [dev-dependencies]
 pgrx-tests = "=0.16.1"
