@@ -1,93 +1,90 @@
-# Multi-stage build for PostgreSQL 18 with pg_pii_vault extension
+# syntax=docker/dockerfile:1.7
+#
+# PostgreSQL with the pg_pii_vault extension.
+#
+# The extension is compiled in a builder stage based on the very same
+# PostgreSQL image as the runtime stage, so it is built against exactly the
+# headers (and ABI) of the server that loads it.
 
-FROM rust:1.92 AS builder
+ARG PG_MAJOR=18
+ARG PG_IMAGE_TAG=18.6-trixie
 
-# Install PostgreSQL 18 development packages
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libreadline-dev \
-    zlib1g-dev \
-    flex \
-    bison \
-    libxml2-dev \
-    libxslt-dev \
-    libssl-dev \
-    libxml2-utils \
-    xsltproc \
-    ccache \
-    pkg-config \
-    wget \
-    ca-certificates \
-    clang \
-    libclang-dev \
-    && rm -rf /var/lib/apt/lists/*
+FROM postgres:${PG_IMAGE_TAG} AS builder
 
-# Install PostgreSQL 18 from source
-WORKDIR /tmp
-RUN wget https://ftp.postgresql.org/pub/source/v18.1/postgresql-18.1.tar.gz && \
-    tar -xzf postgresql-18.1.tar.gz && \
-    cd postgresql-18.1 && \
-    ./configure --prefix=/usr/local/pgsql && \
-    make -j$(nproc) && \
-    make install && \
-    cd contrib && \
-    make -j$(nproc) && \
-    make install
+ARG PG_MAJOR
+ARG RUST_VERSION=1.98.1
+ARG CARGO_PGRX_VERSION=0.16.1
 
-ENV PATH="/usr/local/pgsql/bin:${PATH}"
-ENV PG_CONFIG=/usr/local/pgsql/bin/pg_config
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        curl \
+        libclang-dev \
+        pkg-config \
+        "postgresql-server-dev-${PG_MAJOR}"; \
+    rm -rf /var/lib/apt/lists/*
 
-# Install cargo-pgrx
-RUN cargo install cargo-pgrx --version 0.16.1 --locked
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
 
-# Initialize pgrx
-RUN cargo pgrx init --pg18=/usr/local/pgsql/bin/pg_config
+RUN set -eux; \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --no-modify-path --profile minimal --default-toolchain "${RUST_VERSION}"; \
+    cargo install cargo-pgrx --version "${CARGO_PGRX_VERSION}" --locked; \
+    cargo pgrx init "--pg${PG_MAJOR}=/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config"
 
-# Copy extension source
 WORKDIR /build
-COPY Cargo.toml ./
-COPY pg_pii_vault.control ./
-COPY src ./src/
+COPY Cargo.toml Cargo.lock pg_pii_vault.control ./
+COPY src ./src
+COPY sql ./sql
 
-# Build the extension
-RUN cargo pgrx package --pg-config /usr/local/pgsql/bin/pg_config --features pg18
+# The package is assembled under target/release/pg_pii_vault-pgNN/<paths of
+# pg_config>; copy the files out of the cache mount into /out.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    set -eux; \
+    cargo pgrx package \
+        --pg-config "/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config" \
+        --no-default-features --features "pg${PG_MAJOR}"; \
+    pkg="target/release/pg_pii_vault-pg${PG_MAJOR}"; \
+    mkdir -p /out/lib /out/extension; \
+    cp "${pkg}/usr/lib/postgresql/${PG_MAJOR}/lib/pg_pii_vault.so" /out/lib/; \
+    cp "${pkg}/usr/share/postgresql/${PG_MAJOR}/extension/"pg_pii_vault* /out/extension/; \
+    ls -l /out/lib /out/extension
 
-# Runtime stage
-FROM postgres:18.1
+FROM postgres:${PG_IMAGE_TAG}
 
-# Build argument to include demo init script
+ARG PG_MAJOR
+ARG VERSION=0.1.0
+# Build with INCLUDE_DEMO_INIT=true to create demo objects on first start.
 ARG INCLUDE_DEMO_INIT=false
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    libssl3 \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+LABEL org.opencontainers.image.title="pg_pii_vault" \
+      org.opencontainers.image.description="PostgreSQL ${PG_MAJOR} with pg_pii_vault: column-level PII encryption with per-record keys in HashiCorp Vault" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.source="https://github.com/g0ddest/pg_pii_vault" \
+      org.opencontainers.image.licenses="MIT"
 
-# Copy built extension from builder
-COPY --from=builder /build/target/release/pg_pii_vault-pg18/usr/local/pgsql/share/extension/* /usr/share/postgresql/18/extension/
-COPY --from=builder /build/target/release/pg_pii_vault-pg18/usr/local/pgsql/lib/* /usr/lib/postgresql/18/lib/
+COPY --from=builder /out/lib/ /usr/lib/postgresql/${PG_MAJOR}/lib/
+COPY --from=builder /out/extension/ /usr/share/postgresql/${PG_MAJOR}/extension/
+COPY --chmod=0755 docker/docker-entrypoint.sh /usr/local/bin/pg-pii-vault-entrypoint.sh
+COPY docker-init.sql /usr/local/share/pg_pii_vault/demo-init.sql
 
-# Conditionally copy initialization script for demo purposes only
-RUN if [ "$INCLUDE_DEMO_INIT" = "true" ]; then mkdir -p /docker-entrypoint-initdb.d/; fi
-COPY --chmod=0755 docker-init.sql /tmp/docker-init.sql
-RUN if [ "$INCLUDE_DEMO_INIT" = "true" ]; then \
-        mv /tmp/docker-init.sql /docker-entrypoint-initdb.d/; \
-    else \
-        rm /tmp/docker-init.sql; \
+# New clusters (initdb) preload the extension: required for token secrecy and
+# cluster-wide cache invalidation. With your own postgresql.conf, add
+# pg_pii_vault to shared_preload_libraries yourself.
+RUN set -eux; \
+    echo "shared_preload_libraries = 'pg_pii_vault'" >> /usr/share/postgresql/postgresql.conf.sample; \
+    if [ "${INCLUDE_DEMO_INIT}" = "true" ]; then \
+        cp /usr/local/share/pg_pii_vault/demo-init.sql /docker-entrypoint-initdb.d/50-pg_pii_vault-demo.sql; \
     fi
 
-# Environment variables for Vault connection
-ENV PII_VAULT_URL=""
-ENV PII_VAULT_TOKEN=""
-ENV PII_VAULT_MOUNT="transit"
-ENV PII_VAULT_CACHE_TTL="300"
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
+    CMD pg_isready -h 127.0.0.1 -U "${POSTGRES_USER:-postgres}" || exit 1
 
-# Configure PostgreSQL to use extension settings
-RUN echo "shared_preload_libraries = 'pg_pii_vault'" >> /usr/share/postgresql/postgresql.conf.sample
-
-# Expose PostgreSQL port
-EXPOSE 5432
-
-# Use default postgres entrypoint
+ENTRYPOINT ["pg-pii-vault-entrypoint.sh"]
 CMD ["postgres"]

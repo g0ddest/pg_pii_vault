@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+target
+**/*.rs.bk
+*.dump
+*.log
+tests/pg_regress/results
+tests/pg_regress/regression.*

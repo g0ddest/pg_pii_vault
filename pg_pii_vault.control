@@ -1,4 +1,4 @@
-comment = 'pg_pii_vault:  Created by pgrx'
+comment = 'Column-level PII encryption with per-record keys held in HashiCorp Vault (crypto-shredding)'
 default_version = '@CARGO_VERSION@'
 module_pathname = 'pg_pii_vault'
 relocatable = false
