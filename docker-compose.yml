@@ -1,78 +1,82 @@
+# pg_pii_vault demo: PostgreSQL 18 with the extension + a HashiCorp Vault dev
+# server. For evaluation only: the Vault dev server keeps everything in memory
+# (restarting it destroys all keys, so all encrypted demo data becomes
+# unreadable), has no TLS and uses a well-known root token.
+#
+#   docker compose up -d --build --wait
+#   docker compose exec postgres psql -U postgres -d demo
+#   docker compose down -v
+name: pg-pii-vault-demo
+
 services:
   vault:
-    image: hashicorp/vault:1.15
-    container_name: vault
-    ports:
-      - "8200:8200"
+    image: hashicorp/vault:2.1.1
+    command: server -dev
     environment:
-      VAULT_DEV_ROOT_TOKEN_ID: "dev-token-12345"
-      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
-      VAULT_ADDR: "http://0.0.0.0:8200"
+      VAULT_DEV_ROOT_TOKEN_ID: demo-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
     cap_add:
       - IPC_LOCK
-    command: server -dev
+    ports:
+      - "127.0.0.1:${VAULT_PORT:-8200}:8200"
     healthcheck:
-      test: ["CMD", "vault", "status"]
-      interval: 5s
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 2s
       timeout: 3s
-      retries: 5
-    networks:
-      - pg_vault_network
+      retries: 30
 
+  # Mounts Transit, installs the least-privilege policies shipped in
+  # vault/policies and writes a periodic token restricted to them for
+  # PostgreSQL. In production a Vault Agent would maintain this token file.
   vault-init:
-    image: hashicorp/vault:1.15
-    container_name: vault-init
-    environment:
-      VAULT_ADDR: "http://vault:8200"
-      VAULT_TOKEN: "dev-token-12345"
+    image: hashicorp/vault:2.1.1
+    # Root only to write into the fresh named volume.
+    user: root
     depends_on:
       vault:
         condition: service_healthy
-    networks:
-      - pg_vault_network
-    command: >
-      sh -c "
-        echo 'Waiting for Vault to be ready...' &&
-        sleep 2 &&
-        echo 'Enabling Transit engine...' &&
-        vault secrets enable transit &&
-        echo 'Transit engine enabled successfully!' &&
-        echo 'Vault is ready for use'
-      "
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: demo-root-token
+    volumes:
+      - ./vault/policies:/policies:ro
+      - vault-token:/vault-token
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        vault secrets list | grep -q '^transit/' || vault secrets enable transit
+        vault policy write pg-pii-vault /policies/pg-pii-vault.hcl
+        vault policy write pg-pii-vault-shred /policies/pg-pii-vault-shred.hcl
+        vault policy write pg-pii-vault-transit /policies/pg-pii-vault-transit.hcl
+        vault token create -orphan -period=768h \
+          -policy=pg-pii-vault -policy=pg-pii-vault-shred \
+          -field=token > /vault-token/token.tmp
+        chmod 0644 /vault-token/token.tmp
+        mv /vault-token/token.tmp /vault-token/token
+        echo "Vault ready: transit mounted, policies installed, token written"
 
   postgres:
     build:
       context: .
-      dockerfile: Dockerfile
       args:
         INCLUDE_DEMO_INIT: "true"
-    container_name: postgres_pii_vault
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: testdb
-      PII_VAULT_URL: "http://vault:8200"
-      PII_VAULT_TOKEN: "dev-token-12345"
-      PII_VAULT_MOUNT: "transit"
-      PII_VAULT_CACHE_TTL: "300"
+    image: pg_pii_vault:demo
     depends_on:
       vault-init:
         condition: service_completed_successfully
-    networks:
-      - pg_vault_network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: demo
+      PII_VAULT_URL: http://vault:8200
+      # The dev Vault has no TLS. Never set this in production.
+      PII_VAULT_ALLOW_INSECURE_HTTP: "on"
+      PII_VAULT_TOKEN_FILE: /vault-token/token
     volumes:
-      - postgres_data:/var/lib/postgresql
-
-networks:
-  pg_vault_network:
-    driver: bridge
+      - vault-token:/vault-token:ro
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
 
 volumes:
-  postgres_data:
+  vault-token:
+  pgdata:
