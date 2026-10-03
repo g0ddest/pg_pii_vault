@@ -43,10 +43,13 @@ COPY src ./src
 COPY sql ./sql
 
 # The package is assembled under target/release/pg_pii_vault-pgNN/<paths of
-# pg_config>; copy the files out of the cache mount into /out.
+# pg_config>; copy the files out of the cache mount into /out. The package
+# directory is emptied first, so files of earlier builds left in the cache
+# mount are not shipped.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
     set -eux; \
+    rm -rf "target/release/pg_pii_vault-pg${PG_MAJOR}"; \
     cargo pgrx package \
         --pg-config "/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config" \
         --no-default-features --features "pg${PG_MAJOR}"; \
@@ -59,7 +62,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM postgres:${PG_IMAGE_TAG}
 
 ARG PG_MAJOR
-ARG VERSION=0.1.0
+ARG VERSION=0.1.1
 # Build with INCLUDE_DEMO_INIT=true to create demo objects on first start.
 ARG INCLUDE_DEMO_INIT=false
 

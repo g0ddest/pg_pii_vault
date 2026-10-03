@@ -43,7 +43,7 @@ mod tests {
         let aad = format!("col:piitext:id:{}", hex::encode(key_id));
         let out = Aes256Gcm::new(&key.into())
             .encrypt(
-                Nonce::from_slice(&iv),
+                &Nonce::from(iv),
                 Payload {
                     msg: plaintext.as_bytes(),
                     aad: aad.as_bytes(),

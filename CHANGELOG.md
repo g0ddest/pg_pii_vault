@@ -4,7 +4,25 @@ All notable changes to pg_pii_vault are documented in this file. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - Unreleased
+## [0.1.1] - 2026-10-03
+
+A maintenance release with updated dependencies. It changes neither the SQL interface nor the stored
+values: after installing the new files and restarting, `ALTER EXTENSION pg_pii_vault UPDATE` only
+records the new version.
+
+### Fixed
+
+- The extension builds again with warnings denied after the update to `aes-gcm` 0.11, which deprecated
+  `Nonce::from_slice`.
+
+### Changed
+
+- Dependencies: `aes-gcm` 0.11.1, `base64` 0.23.1, `libc` 0.2.190; test and build dependencies
+  `cc` 1.6.0, `tokio` 1.53.2, `uuid` 1.27.0. The `dtolnay/rust-toolchain` action is pinned to a newer
+  commit.
+- The upgrade test in CI also upgrades from 0.1.0.
+
+## [0.1.0] - 2026-10-03
 
 0.1.0 is a security release. It changes behaviour that applications rely on and cannot be downgraded.
 Follow [UPGRADING.md](UPGRADING.md) to upgrade from 0.0.0.
@@ -150,5 +168,6 @@ Proof of concept.
 - Settings `pii_vault.url`, `pii_vault.token`, `pii_vault.mount`, `pii_vault.cache_ttl_sec`.
 - PostgreSQL 13 to 18.
 
-[0.1.0]: https://github.com/g0ddest/pg_pii_vault/compare/v0.0.0-poc...HEAD
+[0.1.1]: https://github.com/g0ddest/pg_pii_vault/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/g0ddest/pg_pii_vault/compare/v0.0.0-poc...v0.1.0
 [0.0.0]: https://github.com/g0ddest/pg_pii_vault/releases/tag/v0.0.0-poc

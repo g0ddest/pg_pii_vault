@@ -1,6 +1,6 @@
 # Operations guide
 
-This guide is for the people who run pg_pii_vault 0.1.0 in production: database administrators and Vault
+This guide is for the people who run pg_pii_vault 0.1 in production: database administrators and Vault
 operators. For SQL usage see [USAGE.md](../USAGE.md), for the threat model see
 [SECURITY-MODEL.md](SECURITY-MODEL.md), for container deployments see [DOCKER.md](../DOCKER.md), and for
 upgrading from 0.0.0 see [UPGRADING.md](../UPGRADING.md).

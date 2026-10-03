@@ -1,6 +1,6 @@
 [package]
 name = "pg_pii_vault"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "PostgreSQL extension for column-level PII encryption with per-record keys held in HashiCorp Vault (crypto-shredding)"
 license = "MIT"
@@ -29,7 +29,7 @@ pg_test = []
 [dependencies]
 pgrx = "=0.16.1"
 aes-gcm = "0.11"
-base64 = "0.22"
+base64 = "0.23"
 hex = "0.4"
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }

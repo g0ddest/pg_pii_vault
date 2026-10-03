@@ -426,7 +426,7 @@ fn route(method: &str, path: &str, body: &[u8], state: &Arc<Mutex<State>>) -> (u
             nonce[..8].copy_from_slice(&counter.to_be_bytes());
             let sealed = Aes256Gcm::new(&k.versions[version - 1].into())
                 .encrypt(
-                    Nonce::from_slice(&nonce),
+                    &Nonce::from(nonce),
                     Payload {
                         msg: &plaintext,
                         aad: &aad,
@@ -471,7 +471,7 @@ fn route(method: &str, path: &str, body: &[u8], state: &Arc<Mutex<State>>) -> (u
                 return (400, errors("invalid ciphertext: too short"));
             }
             match Aes256Gcm::new(&k.versions[version - 1].into()).decrypt(
-                Nonce::from_slice(&blob[..12]),
+                &Nonce::try_from(&blob[..12]).unwrap(),
                 Payload {
                     msg: &blob[12..],
                     aad: &aad,

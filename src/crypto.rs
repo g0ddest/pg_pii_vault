@@ -51,7 +51,7 @@ pub fn seal(
     let aad = aad(FORMAT_V2, key_id, key_version);
     let mut ciphertext = Aes256Gcm::new(key.into())
         .encrypt(
-            Nonce::from_slice(&iv),
+            &Nonce::from(iv),
             Payload {
                 msg: plaintext,
                 aad: aad.as_bytes(),
@@ -80,9 +80,11 @@ pub fn open(
     let mut buf = Vec::with_capacity(sealed.ciphertext.len() + TAG_LEN);
     buf.extend_from_slice(&sealed.ciphertext);
     buf.extend_from_slice(&sealed.tag);
+    // The IV length was checked when the value was parsed.
+    let nonce = Nonce::try_from(sealed.iv.as_slice()).ok()?;
     Aes256Gcm::new(key.into())
         .decrypt(
-            Nonce::from_slice(&sealed.iv),
+            &nonce,
             Payload {
                 msg: &buf,
                 aad: aad.as_bytes(),

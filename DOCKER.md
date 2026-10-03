@@ -82,7 +82,7 @@ docker run -d --name postgres \
   -v /srv/pgdata:/var/lib/postgresql \
   -v /srv/secrets:/run/secrets:ro \
   -p 5432:5432 \
-  ghcr.io/g0ddest/pg_pii_vault:0.1.0
+  ghcr.io/g0ddest/pg_pii_vault:0.1.1
 ```
 
 Then, as a superuser, create the extension and grant the application role the
@@ -184,7 +184,7 @@ the extension is compiled against the exact server headers it runs with.
 | `PG_IMAGE_TAG` | `18.6-trixie` | `postgres` image tag; must match `PG_MAJOR` |
 | `RUST_VERSION` | `1.98.1` | Rust toolchain used to compile |
 | `CARGO_PGRX_VERSION` | `0.16.1` | must equal the `pgrx` version in `Cargo.toml` |
-| `VERSION` | `0.1.0` | value of the `org.opencontainers.image.version` label |
+| `VERSION` | `0.1.1` | value of the `org.opencontainers.image.version` label |
 | `INCLUDE_DEMO_INIT` | `false` | install `docker-init.sql` as an init script |
 
 For another major version, pick a matching Debian trixie tag, for example:
@@ -199,13 +199,13 @@ Release images and extension tarballs carry GitHub build-provenance
 attestations:
 
 ```bash
-gh attestation verify oci://ghcr.io/g0ddest/pg_pii_vault:0.1.0 --owner g0ddest
-gh attestation verify pg_pii_vault-0.1.0-pg18-linux-amd64.tar.gz --owner g0ddest
-sha256sum -c pg_pii_vault-0.1.0-pg18-linux-amd64.tar.gz.sha256
+gh attestation verify oci://ghcr.io/g0ddest/pg_pii_vault:0.1.1 --owner g0ddest
+gh attestation verify pg_pii_vault-0.1.1-pg18-linux-amd64.tar.gz --owner g0ddest
+sha256sum -c pg_pii_vault-0.1.1-pg18-linux-amd64.tar.gz.sha256
 ```
 
 The image also includes an SBOM (`docker buildx imagetools inspect
-ghcr.io/g0ddest/pg_pii_vault:0.1.0 --format '{{json .SBOM}}'`).
+ghcr.io/g0ddest/pg_pii_vault:0.1.1 --format '{{json .SBOM}}'`).
 
 ## Troubleshooting
 

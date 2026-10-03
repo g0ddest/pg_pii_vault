@@ -1,6 +1,6 @@
 # Security model
 
-This document describes what pg_pii_vault 0.1.0 protects, against whom, and what it relies on. It is
+This document describes what pg_pii_vault 0.1 protects, against whom, and what it relies on. It is
 written for the operators and developers who deploy the extension. To report a vulnerability, see
 [SECURITY.md](../SECURITY.md).
 
@@ -275,8 +275,8 @@ used by `SELECT`, `COPY` and `pg_dump` is `piitext:` followed by the base64 of t
 | Format | Written by | Fields | Associated data (AAD) |
 |---|---|---|---|
 | 1 | pg_pii_vault 0.0.x | `v`, key id `k`, IV `i`, tag `t`, ciphertext `c` | `col:piitext:id:<hex key id>` |
-| 2 | 0.1.0, `key_mode = export` | as format 1, plus key version `kv` | `pg_pii_vault:v2:<hex key id>:<key version>` |
-| 3 | 0.1.0, `key_mode = transit` | `v`, `k`, `kv`, and `c` holding the Vault ciphertext `vault:v<N>:...` | `pg_pii_vault:v3:<hex key id>`, sent to Vault as `associated_data` |
+| 2 | 0.1.0 and later, `key_mode = export` | as format 1, plus key version `kv` | `pg_pii_vault:v2:<hex key id>:<key version>` |
+| 3 | 0.1.0 and later, `key_mode = transit` | `v`, `k`, `kv`, and `c` holding the Vault ciphertext `vault:v<N>:...` | `pg_pii_vault:v3:<hex key id>`, sent to Vault as `associated_data` |
 
 A higher format number is rejected as corrupted. Values of every format stay readable whatever
 `pii_vault.key_mode` is, provided that the token has the capabilities they need (section 7).
