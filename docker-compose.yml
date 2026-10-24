@@ -10,7 +10,7 @@ name: pg-pii-vault-demo
 
 services:
   vault:
-    image: hashicorp/vault:2.1.1
+    image: hashicorp/vault:2.2.0
     command: server -dev
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: demo-root-token
@@ -29,7 +29,7 @@ services:
   # vault/policies and writes a periodic token restricted to them for
   # PostgreSQL. In production a Vault Agent would maintain this token file.
   vault-init:
-    image: hashicorp/vault:2.1.1
+    image: hashicorp/vault:2.2.0
     # Root only to write into the fresh named volume.
     user: root
     depends_on:
